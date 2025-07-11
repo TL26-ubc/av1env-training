@@ -154,6 +154,5 @@ if __name__ == "__main__":
         model.save(str(interrupted_model_path))
         wrapped_gym_env.env.save_bitstream_to_file(
             str(base_output_path / "interrupted_encoder_video.ivf"),
-            interrupt=True
         )
         print(f"Model saved to: {interrupted_model_path}")
