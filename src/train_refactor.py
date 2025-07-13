@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+import math
 
 from av1gym.environment import Av1GymEnv, Av1GymObsNormWrapper
 from stable_baselines3 import DQN, PPO
@@ -7,6 +8,28 @@ from stable_baselines3.common.monitor import Monitor
 from wandb_callback import WandbCallback
 import wandb
 from av1gym.environment.actorcritic import SBGlobalActorCriticPolicy
+
+
+def exponential_lr_schedule(initial_lr: float, decay_rate: float = 0.96):
+    """
+    Exponential learning rate scheduler function for Stable Baselines3.
+    
+    Args:
+        initial_lr: Starting learning rate
+        decay_rate: Exponential decay rate (< 1.0 for decay)
+    
+    Returns:
+        Callable that takes progress and returns current learning rate
+    """
+    def schedule(progress_remaining: float) -> float:
+        """
+        Progress will decrease from 1 (beginning) to 0 (end).
+        We want lr to decrease as progress_remaining decreases.
+        """
+        progress_used = 1.0 - progress_remaining  # 0 to 1 as training progresses
+        current_lr = initial_lr * (decay_rate ** progress_used)
+        return current_lr
+    return schedule
     
 def prase_arg():
     parser = argparse.ArgumentParser(description="Train RL agent for video encoding")
@@ -28,6 +51,9 @@ def prase_arg():
     )
     parser.add_argument(
         "--learning_rate", type=float, default=3e-4, help="Learning rate"
+    )
+    parser.add_argument(
+        "--lr_decay_rate", type=float, default=0.96, help="Exponential learning rate decay rate (< 1.0 for decay)"
     )
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
     parser.add_argument(
@@ -78,6 +104,7 @@ if __name__ == "__main__":
             config={
                 "algorithm": args.algorithm,
                 "learning_rate": args.learning_rate,
+                "lr_decay_rate": args.lr_decay_rate,
                 "batch_size": args.batch_size,
                 "n_steps": args.n_steps,
                 "lambda_rd": args.lambda_rd,
@@ -113,18 +140,29 @@ if __name__ == "__main__":
     model = PPO(
         policy=SBGlobalActorCriticPolicy,
         env=env,
-        learning_rate=args.learning_rate,
+        learning_rate=exponential_lr_schedule(args.learning_rate, args.lr_decay_rate),
         n_steps=args.n_steps,
         batch_size=args.batch_size,
         n_epochs=10,
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.2,
-        ent_coef=0.01,
+        ent_coef=0.1,
         vf_coef=0.5,
         max_grad_norm=0.5,
         verbose=1,
         device="auto",
+        policy_kwargs={
+            # Model architecture configuration - edit these directly for different model sizes
+            "sb_channels": 128,
+            "glob_layers": [128, 64],       # 2 layers: input → 128 → 64
+            "value_layers": [128, 1],  # 2 hidden layers: input → 256 → 128 → 1
+            
+            # Examples for different model sizes:
+            # Small model:  sb_channels=32,  glob_layers=[32, 32],    value_layers=[64, 1]
+            # Large model:  sb_channels=128, glob_layers=[128, 128], value_layers=[256, 256, 1]
+            # Deep model:   sb_channels=64,  glob_layers=[64, 64, 64, 64], value_layers=[128, 128, 128, 1]
+        },
     )
         
     total_timesteps = args.total_iteration * wrapped_gym_env.env.num_frames

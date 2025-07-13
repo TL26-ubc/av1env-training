@@ -57,15 +57,25 @@ class WandbCallback(BaseCallback):
             self.episode_lengths.append(self.current_episode_length)
             
             # Log episode metrics
+            mean_y_psnr = np.mean(self.episode_psnr_y) if self.episode_psnr_y else 0
+            mean_bitrate = np.mean(self.episode_bitrates) if self.episode_bitrates else 0
+            total_bitrate = np.sum(self.episode_bitrates) if self.episode_bitrates else 0
+            
+            # Calculate PSNR/bitrate ratio for compression efficiency
+            psnr_per_bit = mean_y_psnr / mean_bitrate if mean_bitrate > 0 else 0
+            psnr_per_total_bits = mean_y_psnr / total_bitrate if total_bitrate > 0 else 0
+            
             episode_metrics = {
                 "episode/reward": self.current_episode_reward,
                 "episode/length": self.current_episode_length,
                 "episode/number": len(self.episode_rewards),
-                "episode/mean_y_psnr": np.mean(self.episode_psnr_y) if self.episode_psnr_y else 0,
+                "episode/mean_y_psnr": mean_y_psnr,
                 "episode/mean_cb_psnr": np.mean(self.episode_psnr_cb) if self.episode_psnr_cb else 0,
                 "episode/mean_cr_psnr": np.mean(self.episode_psnr_cr) if self.episode_psnr_cr else 0,
-                "episode/mean_bitrate": np.mean(self.episode_bitrates) if self.episode_bitrates else 0,
-                "episode/total_bitrate": np.sum(self.episode_bitrates) if self.episode_bitrates else 0,
+                "episode/mean_bitrate": mean_bitrate,
+                "episode/total_bitrate": total_bitrate,
+                "episode/psnr_per_bit": psnr_per_bit,           # PSNR per average bit
+                "episode/compression_efficiency": psnr_per_total_bits,  # PSNR per total bits
             }
             
             wandb.log(episode_metrics)
