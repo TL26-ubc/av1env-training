@@ -2,11 +2,10 @@ import argparse
 from pathlib import Path
 
 from av1gym.environment import Av1GymEnv, Av1GymObsNormWrapper
-from stable_baselines3 import DQN, PPO
+from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from wandb_callback import WandbCallback
 import wandb
-from av1gym.environment.actorcritic import SBGlobalActorCriticPolicy
     
 def prase_arg():
     parser = argparse.ArgumentParser(description="Train RL agent for video encoding")
@@ -111,7 +110,7 @@ if __name__ == "__main__":
 
     # Standard SB3 PPO; we pass the *module instance* as the policy
     model = PPO(
-        policy=SBGlobalActorCriticPolicy,
+        policy="MultiInputPolicy",
         env=env,
         learning_rate=args.learning_rate,
         n_steps=args.n_steps,
