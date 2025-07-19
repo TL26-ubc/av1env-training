@@ -171,6 +171,7 @@ if __name__ == "__main__":
                 --total_iteration 100 \
                 --wandb True \
                 --batch_size 32 \
+                --video_name {name} \
                 --tbr {tbr}"
             print(f"Running training command: {command}")
             os.system(command)

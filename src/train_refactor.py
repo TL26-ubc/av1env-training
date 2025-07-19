@@ -120,7 +120,7 @@ if __name__ == "__main__":
                 "video_file": args.file,
                 "video_name": args.video_name,
             },
-            name=f"{args.video_name}_tbr{args.tbr}",
+            name=f"{args.video_name}_tbr_{args.tbr}",
         )
         wandb_callback = WandbCallback()
     else:
