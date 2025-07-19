@@ -55,7 +55,7 @@ def prase_arg():
     parser.add_argument(
         "--lr_decay_rate", type=float, default=0.96, help="Exponential learning rate decay rate (< 1.0 for decay)"
     )
-    parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=65, help="Batch size")
     parser.add_argument(
         "--n_steps",
         type=int,
@@ -90,6 +90,14 @@ def prase_arg():
         help="enable wandb logging, put any value here to enable",
         default=None,
     )
+    
+    parser.add_argument(
+        "--tbr", type=int, default=1000, help="Target bitrate for the original encoder"
+    )
+    
+    parser.add_argument(
+        "--video_name", type=str, default="default_video_name", help="Name of the video being encoded"
+    )
 
     args = parser.parse_args()
     return args
@@ -110,8 +118,9 @@ if __name__ == "__main__":
                 "lambda_rd": args.lambda_rd,
                 "total_iteration": args.total_iteration,
                 "video_file": args.file,
+                "video_name": args.video_name,
             },
-            name=f"{args.algorithm}_lr{args.learning_rate}_rd{args.lambda_rd}"
+            name=f"{args.video_name}_tbr{args.tbr}",
         )
         wandb_callback = WandbCallback()
     else:
@@ -122,7 +131,8 @@ if __name__ == "__main__":
     gym_env = Av1GymEnv(
         video_path=args.file,
         output_dir=str(base_output_path),
-        lambda_rd=args.lambda_rd
+        lambda_rd=args.lambda_rd,
+        tbr=args.tbr,
     )
     wrapped_gym_env = Av1GymObsNormWrapper(gym_env)
     
@@ -150,13 +160,14 @@ if __name__ == "__main__":
         ent_coef=0.1,
         vf_coef=0.5,
         max_grad_norm=0.5,
+        normalize_advantage=True,
         verbose=1,
         device="auto",
         policy_kwargs={
             # Model architecture configuration - edit these directly for different model sizes
             "sb_channels": 128,
-            "glob_layers": [128, 64],       # 2 layers: input → 128 → 64
-            "value_layers": [128, 1],  # 2 hidden layers: input → 256 → 128 → 1
+            "glob_layers": [128, 128, 64],       # 2 layers: input → 128 → 64
+            "value_layers": [256, 128, 1],  # 2 hidden layers: input → 128 → 1
             
             # Examples for different model sizes:
             # Small model:  sb_channels=32,  glob_layers=[32, 32],    value_layers=[64, 1]
