@@ -44,10 +44,14 @@ def extract_stats_from_file(stat_file_path):
         return None
 
 
-def test_for_tbr(SVT_path, local_video_path, output_path, name, stat_file_path, tbr=600):
+def test_for_tbr(SVT_path, local_video_path, output_path, name, stat_file_path, tbr=600, target_qp=16, allowable_deviation=2):
     """
     Test encoding with a specific target bitrate (tbr) and extract stats.
     """
+    min_qp = target_qp - allowable_deviation
+    max_qp = target_qp + allowable_deviation
+    last_qp = None
+    min_step = 100
     while True:
         command = f"{SVT_path} -i {local_video_path} -b {output_path / (name + '_test.ivf')} \
             --rc 2 --tbr {tbr} --pred-struct 1 --enable-stat-report 1 --stat-file {stat_file_path}"
@@ -62,19 +66,23 @@ def test_for_tbr(SVT_path, local_video_path, output_path, name, stat_file_path, 
         if qp is None:
             print("Failed to extract QP, exiting test.")
             break
-        if 28 <= qp <= 32:
+        if min_qp <= qp <= max_qp:
             print(f"Found suitable tbr: {tbr} with average QP: {qp}")
             break
+        if last_qp is not None and abs(last_qp - qp) > allowable_deviation * 2:
+            # If we are oscillating, we need to adjust the tbr more gentely
+            print(f"Oscillation detected: last QP {last_qp}, current QP {qp}")
+            min_step = max(10, min_step // 2)
         # Adjust tbr based on how far qp is from the target range
-        if qp < 28:
-            diff = 28 - qp
-            # Decrease tbr, larger step if far, minimum step 100
-            step = max(int(tbr * (diff / 32)), 100)
+        if qp < min_qp:
+            diff = min_qp - qp
+            # Decrease tbr, larger step if far
+            step = max(int(tbr * (diff / 32)), min_step)
             tbr = max(100, tbr - step)
-        elif qp > 32:
-            diff = qp - 32
-            # Increase tbr, larger step if far, minimum step 100
-            step = max(int(tbr * (diff / 32)), 100)
+        elif qp > max_qp:
+            diff = qp - max_qp
+            # Increase tbr, larger step if far
+            step = max(int(tbr * (diff / 32)), min_step)
             tbr = tbr + step
         else:
             # Should not reach here, but break just in case
@@ -116,62 +124,62 @@ if __name__ == "__main__":
             name = video_file.split('/')[-1].split('.')[0]
             print(f"Video name: {name}")
             
-            # create output directory for each video
+            
+            tbr = 1000
+            min_qp = 16
+            max_qp = 48
+            
+            # Prepare local video path and download if necessary (only once per video)
             video_output_dir = args.output_dir / name
             if not video_output_dir.exists():
                 video_output_dir.mkdir(parents=True, exist_ok=True)
-            print(f"Output directory: {video_output_dir}")
-            
-            # check if the video file is in output directory, if not download it
             local_video_path = video_output_dir / (name + ".y4m")
             if not local_video_path.exists():
-                import os
                 print(f"Downloading video from {video_file}")
                 os.system(f"wget -O {local_video_path} {video_file}")
+                
+            # need to find each tbr for each video, increment from min to max. step by 4
+            for qp in range(min_qp, max_qp + 1, 4):
+                # create output directory for each video
+                video_output_dir = args.output_dir / name / f"qp_{qp}"
+                if not video_output_dir.exists():
+                    video_output_dir.mkdir(parents=True, exist_ok=True)
+                print(f"Output directory: {video_output_dir}")
 
-            # run original SVT-AV1 encoder to get the original output
-            original_output = video_output_dir / "original"
-            if not original_output.exists():
-                original_output.mkdir(parents=True, exist_ok=True)
-            
-            stat_file_path = original_output / (name + '_stat.txt')
-            
-            tbr = 1000
-            # Only run encoding if stat file doesn't exist
-            if not stat_file_path.exists():
+                # run original SVT-AV1 encoder to get the original output
+                original_output = video_output_dir / "original"
+                if not original_output.exists():
+                    original_output.mkdir(parents=True, exist_ok=True)
+                
+                stat_file_path = original_output / (name + f'_qp{qp}_stat.txt')
+                
+                # Only run encoding if stat file doesn't exist
                 tbr, stat = test_for_tbr(
                     SVT_path=str(args.SVTAV1_path),
                     local_video_path=str(local_video_path),
                     output_path=original_output,
                     name=name,
                     stat_file_path=stat_file_path,
-                    tbr=tbr
+                    tbr=tbr,
+                    target_qp=qp
                 )
                 print("The final tbr is:", tbr)
                 all_video_stats[name] = stat
-            else:
-                print(f"Stat file already exists: {stat_file_path}")
-                # extract stats from existing file
-                stat = extract_stats_from_file(stat_file_path)
-                all_video_stats[name] = stat
-                tbr = stat['bitrate_kbps'] if stat else None
-                print("The existing tbr is:", tbr)
-            print(f"Stats for {name}: {stat}")
-            # round tbr to nearest 100
-            if tbr is not None:
-                tbr = round(tbr / 100) * 100
-            print(f"Using tbr: {tbr} for training.")
-            
-            if tbr is None:
-                print(f"Could not determine tbr for video {name}, skipping training.")
-                continue
-            command = f"python av1env-training/src/train_refactor.py \
-                --file {local_video_path} \
-                --output_dir {video_output_dir} \
-                --total_iteration 100 \
-                --wandb True \
-                --batch_size 32 \
-                --video_name {name} \
-                --tbr {tbr}"
-            print(f"Running training command: {command}")
-            os.system(command)
+                print(f"Stats for {name}: {stat}")
+                # round tbr to nearest 100 and ensure tbr is int
+                tbr = int(round(tbr / 100) * 100)
+                print(f"Using tbr: {tbr} for training.")
+                
+                if tbr is None:
+                    print(f"Could not determine tbr for video {name}, skipping training.")
+                    continue
+                command = f"python av1env-training/src/train_refactor.py \
+                    --file {local_video_path} \
+                    --output_dir {video_output_dir} \
+                    --total_iteration 100 \
+                    --wandb True \
+                    --batch_size 32 \
+                    --video_name {name} \
+                    --tbr {tbr}"
+                print(f"Running training command: {command}")
+                os.system(command)
