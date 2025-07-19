@@ -51,7 +51,7 @@ def test_for_tbr(SVT_path, local_video_path, output_path, name, stat_file_path, 
     min_qp = target_qp - allowable_deviation
     max_qp = target_qp + allowable_deviation
     last_qp = None
-    min_step = 100
+    min_step = tbr // 5
     while True:
         command = f"{SVT_path} -i {local_video_path} -b {output_path / (name + '_test.ivf')} \
             --rc 2 --tbr {tbr} --pred-struct 1 --enable-stat-report 1 --stat-file {stat_file_path}"
